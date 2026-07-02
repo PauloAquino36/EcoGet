@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EcoGet – Orçamentos</title>
+    <link rel="stylesheet" href="../css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="sidebar-logo"><i class="fa-solid fa-leaf"></i> <span>Eco</span>Get</div>
+        <nav>
+            <a href="dashboard.html"><i class="fa-solid fa-gauge-high fa-fw"></i> Dashboard</a>
+            <a href="transacoes.html"><i class="fa-solid fa-receipt fa-fw"></i> Transações</a>
+            <a href="contas.html"><i class="fa-solid fa-building-columns fa-fw"></i> Contas Bancárias</a>
+            <a href="metas.html"><i class="fa-solid fa-bullseye fa-fw"></i> Metas</a>
+            <a href="orcamentos.html" class="active"><i class="fa-solid fa-clipboard-list fa-fw"></i> Orçamentos</a>
+        </nav>
+        <div class="sidebar-footer">
+            <div id="user-email"></div>
+            <a onclick="Api.logout()">Sair</a>
+        </div>
+    </aside>
+
+    <div class="main">
+        <div class="topbar"><h1>Orçamentos</h1></div>
+        <div class="content">
+            <div class="table-card">
+                <div class="table-header">
+                    <h2>Lista de Orçamentos</h2>
+                    <button class="btn btn-primary" onclick="openModal()">+ Novo Orçamento</button>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Nome</th>
+                            <th>Categoria</th>
+                            <th>Estimado</th>
+                            <th>Atual</th>
+                            <th>Utilização</th>
+                            <th>Usuário</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal -->
+    <div class="modal-overlay" id="modal">
+        <div class="modal">
+            <h3 id="modal-title">Novo Orçamento</h3>
+            <form id="form" autocomplete="off">
+                <input type="hidden" id="fid">
+                <div class="form-group">
+                    <label>Nome do orçamento</label>
+                    <input type="text" id="fnome" placeholder="Ex: Gastos mensais de alimentação" required>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Valor Estimado (R$)</label>
+                        <input type="number" step="0.01" min="0" id="fvalorEstimado" placeholder="0,00" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Categoria</label>
+                        <div class="select-with-add">
+                            <select id="fidCategoria" required></select>
+                            <button type="button" class="btn-add-inline" id="btn-add-categoria" onclick="openQC('categoria')" title="Nova categoria" style="display:none">+</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Período <small style="color:var(--text-muted)">(opcional)</small></label>
+                    <select id="fidPeriodo"></select>
+                </div>
+                <div id="form-alert" class="alert alert-danger" style="display:none;"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-neutral" onclick="closeModal()">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Quick Create -->
+    <div class="qc-overlay" id="qc-overlay">
+        <div class="qc-modal">
+            <h4 id="qc-title"></h4>
+            <div id="qc-fields"></div>
+            <div id="qc-alert" class="alert alert-danger" style="display:none;"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-neutral" onclick="closeQC()">Cancelar</button>
+                <button type="button" class="btn btn-primary" onclick="submitQC()">Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="../script/api.js"></script>
+    <script>
+        Api.requireAuth();
+        let editingId = null;
+
+        if (Api.isAdmin()) {
+            document.getElementById('btn-add-categoria').style.display = '';
+        }
+
+        async function loadSelects() {
+            const [resC, resP] = await Promise.all([
+                Api.get('/api/v1/categorias'),
+                Api.get('/api/v1/periodosorcamentais'),
+            ]);
+            const categorias = resC && resC.ok ? await resC.json() : [];
+            const periodos   = resP && resP.ok ? await resP.json() : [];
+
+            document.getElementById('fidCategoria').innerHTML =
+                categorias.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
+
+            const pSel = document.getElementById('fidPeriodo');
+            pSel.innerHTML = '<option value="">— Nenhum —</option>' +
+                periodos.map(p => `<option value="${p.id}">${p.tipo}</option>`).join('');
+        }
+
+        async function load() {
+            const res = await Api.get('/api/v1/orcamentos');
+            if (!res) return;
+            const data = await res.json();
+            const tbody = document.getElementById('tbody');
+            if (!data.length) {
+                tbody.innerHTML = `<tr><td colspan="8" class="empty-state">Nenhum orçamento cadastrado.</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = data.map(o => {
+                const pct = o.valorEstimado
+                    ? Math.min(100, ((o.valorAtual || 0) / o.valorEstimado * 100)).toFixed(0)
+                    : 0;
+                const barColor = pct >= 90 ? 'var(--danger)' : pct >= 70 ? 'var(--warning)' : 'var(--primary-light)';
+                return `<tr>
+                    <td>${o.id}</td>
+                    <td><strong>${o.nome}</strong></td>
+                    <td>${o.nomeCategoria || '—'}</td>
+                    <td>R$ ${(o.valorEstimado || 0).toFixed(2)}</td>
+                    <td>R$ ${(o.valorAtual   || 0).toFixed(2)}</td>
+                    <td>
+                        <div class="progress-wrap">
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width:${pct}%;background:${barColor}"></div>
+                            </div>
+                            <small>${pct}%</small>
+                        </div>
+                    </td>
+                    <td>${o.nomeUsuario || '—'}</td>
+                    <td><div class="actions">
+                        <button class="btn btn-warning btn-sm" onclick='openModal(${JSON.stringify(o)})'>Editar</button>
+                        <button class="btn btn-danger btn-sm"  onclick="excluir(${o.id})">Excluir</button>
+                    </div></td>
+                </tr>`;
+            }).join('');
+        }
+
+        function openModal(o = null) {
+            editingId = o ? o.id : null;
+            document.getElementById('modal-title').textContent = o ? 'Editar Orçamento' : 'Novo Orçamento';
+            document.getElementById('fnome').value          = o ? o.nome          : '';
+            document.getElementById('fvalorEstimado').value = o ? o.valorEstimado : '';
+            document.getElementById('form-alert').style.display = 'none';
+            if (o) {
+                document.getElementById('fidCategoria').value = o.idCategoria           || '';
+                document.getElementById('fidPeriodo').value   = o.idPeriodoOrcamental   || '';
+            }
+            document.getElementById('modal').classList.add('open');
+        }
+
+        function closeModal() {
+            document.getElementById('modal').classList.remove('open');
+            document.getElementById('form').reset();
+            editingId = null;
+        }
+
+        document.getElementById('form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formAlert = document.getElementById('form-alert');
+            const body = {
+                nome:                document.getElementById('fnome').value,
+                valorEstimado:       parseFloat(document.getElementById('fvalorEstimado').value),
+                idCategoria:         parseInt(document.getElementById('fidCategoria').value),
+                idPeriodoOrcamental: document.getElementById('fidPeriodo').value
+                                     ? parseInt(document.getElementById('fidPeriodo').value) : null,
+            };
+            const res = editingId
+                ? await Api.put(`/api/v1/orcamentos/${editingId}`, body)
+                : await Api.post('/api/v1/orcamentos', body);
+
+            if (res && (res.ok || res.status === 201)) {
+                closeModal();
+                load();
+            } else {
+                const msg = res ? await res.text() : 'Sem conexão com a API.';
+                formAlert.textContent   = msg || 'Erro ao salvar.';
+                formAlert.style.display = 'block';
+            }
+        });
+
+        async function excluir(id) {
+            if (!confirm('Deseja excluir este orçamento?')) return;
+            const res = await Api.del(`/api/v1/orcamentos/${id}`);
+            if (res) load();
+        }
+
+        loadSelects();
+        load();
+
+        // ── Quick Create ──────────────────────────────────
+        let _qcSelectId, _qcEndpoint, _qcBodyFn, _qcRefreshFn;
+
+        async function _reloadCategoriasSelect() {
+            const res = await Api.get('/api/v1/categorias');
+            const cats = res && res.ok ? await res.json() : [];
+            document.getElementById('fidCategoria').innerHTML =
+                cats.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
+        }
+
+        const QC_TYPES = {
+            categoria: {
+                title: 'Nova Categoria',
+                endpoint: '/api/v1/categorias',
+                selectId: 'fidCategoria',
+                html: `
+                    <div class="form-group">
+                        <label>Nome</label>
+                        <input type="text" id="qc-f1" placeholder="Ex: Alimentação" required>
+                    </div>`,
+                body() {
+                    const nome = document.getElementById('qc-f1').value.trim();
+                    return nome ? { nome } : null;
+                },
+                refresh: _reloadCategoriasSelect,
+            },
+        };
+
+        function openQC(type) {
+            const cfg = QC_TYPES[type];
+            _qcSelectId  = cfg.selectId;
+            _qcEndpoint  = cfg.endpoint;
+            _qcBodyFn    = cfg.body.bind(cfg);
+            _qcRefreshFn = cfg.refresh;
+            document.getElementById('qc-title').textContent = cfg.title;
+            document.getElementById('qc-fields').innerHTML  = cfg.html;
+            document.getElementById('qc-alert').style.display = 'none';
+            document.getElementById('qc-overlay').classList.add('open');
+            setTimeout(() => document.querySelector('#qc-fields input')?.focus(), 50);
+        }
+
+        function closeQC() {
+            document.getElementById('qc-overlay').classList.remove('open');
+        }
+
+        async function submitQC() {
+            const alertEl = document.getElementById('qc-alert');
+            alertEl.style.display = 'none';
+            const body = _qcBodyFn();
+            if (!body) {
+                alertEl.textContent = 'Preencha todos os campos obrigatórios.';
+                alertEl.style.display = 'block';
+                return;
+            }
+            const res = await Api.post(_qcEndpoint, body);
+            if (res && (res.ok || res.status === 201)) {
+                const created = await res.json();
+                await _qcRefreshFn();
+                if (created.id) document.getElementById(_qcSelectId).value = created.id;
+                closeQC();
+            } else {
+                const msg = res ? await res.text() : 'Sem conexão com a API.';
+                alertEl.textContent = msg || 'Erro ao salvar.';
+                alertEl.style.display = 'block';
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EcoGet – Login</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+</head>
+<body class="auth-page">
+    <div class="auth-card">
+        <div class="auth-logo">
+            <h1><i class="fa-solid fa-leaf"></i> EcoGet</h1>
+            <p>Gestão Financeira Pessoal</p>
+        </div>
+
+        <div id="alert" class="alert alert-danger" style="display:none;"></div>
+
+        <form id="login-form">
+            <div class="form-group">
+                <label>E-mail</label>
+                <input type="email" id="email" placeholder="seu@email.com" required autofocus>
+            </div>
+            <div class="form-group">
+                <label>Senha</label>
+                <input type="password" id="senha" placeholder="••••••••" required>
+            </div>
+            <button type="submit" class="btn btn-primary" id="btn-submit">Entrar</button>
+        </form>
+
+        <div class="auth-link">
+            Não tem conta? <a href="pages/register.html">Cadastre-se</a>
+        </div>
+    </div>
+
+    <script src="script/api.js"></script>
+    <script>
+        if (Api.getToken()) window.location.href = 'pages/dashboard.html';
+
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const alertEl = document.getElementById('alert');
+            const btn     = document.getElementById('btn-submit');
+            alertEl.style.display = 'none';
+            btn.textContent = 'Entrando...';
+            btn.disabled    = true;
+
+            const res = await Api.postPublic('/api/v1/usuarios/auth', {
+                email: document.getElementById('email').value,
+                senha: document.getElementById('senha').value
+            });
+
+            btn.textContent = 'Entrar';
+            btn.disabled    = false;
+
+            if (res && res.ok) {
+                const data = await res.json();
+                Api.setAuth(data.email, data.token, data.admin);
+                window.location.href = 'pages/dashboard.html';
+            } else {
+                alertEl.textContent    = 'E-mail ou senha inválidos.';
+                alertEl.style.display  = 'block';
+            }
+        });
+    </script>
+</body>
+</html>

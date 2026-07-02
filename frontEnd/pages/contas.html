@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EcoGet – Contas Bancárias</title>
+    <link rel="stylesheet" href="../css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="sidebar-logo"><i class="fa-solid fa-leaf"></i> <span>Eco</span>Get</div>
+        <nav>
+            <a href="dashboard.html"><i class="fa-solid fa-gauge-high fa-fw"></i> Dashboard</a>
+            <a href="transacoes.html"><i class="fa-solid fa-receipt fa-fw"></i> Transações</a>
+            <a href="contas.html" class="active"><i class="fa-solid fa-building-columns fa-fw"></i> Contas Bancárias</a>
+            <a href="metas.html"><i class="fa-solid fa-bullseye fa-fw"></i> Metas</a>
+            <a href="orcamentos.html"><i class="fa-solid fa-clipboard-list fa-fw"></i> Orçamentos</a>
+        </nav>
+        <div class="sidebar-footer">
+            <div id="user-email"></div>
+            <a onclick="Api.logout()">Sair</a>
+        </div>
+    </aside>
+
+    <div class="main">
+        <div class="topbar"><h1>Contas Bancárias</h1></div>
+        <div class="content">
+            <div class="table-card">
+                <div class="table-header">
+                    <h2>Lista de Contas</h2>
+                    <button class="btn btn-primary" onclick="openModal()">+ Nova Conta</button>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Agência</th>
+                            <th>Conta</th>
+                            <th>Saldo</th>
+                            <th>Banco</th>
+                            <th>Usuário</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal -->
+    <div class="modal-overlay" id="modal">
+        <div class="modal">
+            <h3 id="modal-title">Nova Conta Bancária</h3>
+            <form id="form" autocomplete="off">
+                <input type="hidden" id="fid">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Agência</label>
+                        <input type="text" id="fagencia" placeholder="Ex: 0001" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Número da Conta</label>
+                        <input type="text" id="fconta" placeholder="Ex: 12345-6" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Saldo Inicial (R$)</label>
+                    <input type="number" step="0.01" id="fsaldo" placeholder="0,00" required>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Banco</label>
+                        <div class="select-with-add">
+                            <select id="fidBanco" required></select>
+                            <button type="button" class="btn-add-inline" onclick="openQC('banco')" title="Novo banco">+</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="form-alert" class="alert alert-danger" style="display:none;"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-neutral" onclick="closeModal()">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Quick Create -->
+    <div class="qc-overlay" id="qc-overlay">
+        <div class="qc-modal">
+            <h4 id="qc-title"></h4>
+            <div id="qc-fields"></div>
+            <div id="qc-alert" class="alert alert-danger" style="display:none;"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-neutral" onclick="closeQC()">Cancelar</button>
+                <button type="button" class="btn btn-primary" onclick="submitQC()">Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="../script/api.js"></script>
+    <script>
+        Api.requireAuth();
+        let editingId = null;
+
+        async function loadSelects() {
+            const res = await Api.get('/api/v1/bancos');
+            const bancos = res && res.ok ? await res.json() : [];
+            fillSelect('fidBanco', bancos, 'id', 'nome');
+        }
+
+        function fillSelect(id, items, val, label) {
+            document.getElementById(id).innerHTML =
+                items.map(i => `<option value="${i[val]}">${i[label]}</option>`).join('');
+        }
+
+        async function load() {
+            const res = await Api.get('/api/v1/contasbancarias');
+            if (!res) return;
+            const data = await res.json();
+            const tbody = document.getElementById('tbody');
+            if (!data.length) {
+                tbody.innerHTML = `<tr><td colspan="7" class="empty-state">Nenhuma conta cadastrada.</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = data.map(c => `
+                <tr>
+                    <td>${c.id}</td>
+                    <td>${c.agencia}</td>
+                    <td>${c.conta}</td>
+                    <td><strong>R$ ${(c.saldo || 0).toFixed(2)}</strong></td>
+                    <td>${c.nomeBanco || '—'}</td>
+                    <td>${c.nomeUsuario || '—'}</td>
+                    <td><div class="actions">
+                        <button class="btn btn-warning btn-sm" onclick='openModal(${JSON.stringify(c)})'>Editar</button>
+                        <button class="btn btn-danger btn-sm"  onclick="excluir(${c.id})">Excluir</button>
+                    </div></td>
+                </tr>
+            `).join('');
+        }
+
+        function openModal(c = null) {
+            editingId = c ? c.id : null;
+            document.getElementById('modal-title').textContent = c ? 'Editar Conta' : 'Nova Conta Bancária';
+            document.getElementById('fagencia').value = c ? c.agencia : '';
+            document.getElementById('fconta').value   = c ? c.conta   : '';
+            document.getElementById('fsaldo').value   = c ? c.saldo   : '';
+            document.getElementById('form-alert').style.display = 'none';
+            if (c) {
+                document.getElementById('fidBanco').value = c.idBanco || '';
+            }
+            document.getElementById('modal').classList.add('open');
+        }
+
+        function closeModal() {
+            document.getElementById('modal').classList.remove('open');
+            document.getElementById('form').reset();
+            editingId = null;
+        }
+
+        document.getElementById('form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formAlert = document.getElementById('form-alert');
+            const body = {
+                agencia: document.getElementById('fagencia').value,
+                conta:   document.getElementById('fconta').value,
+                saldo:   parseFloat(document.getElementById('fsaldo').value),
+                idBanco: parseInt(document.getElementById('fidBanco').value),
+            };
+            const res = editingId
+                ? await Api.put(`/api/v1/contasbancarias/${editingId}`, body)
+                : await Api.post('/api/v1/contasbancarias', body);
+
+            if (res && (res.ok || res.status === 201)) {
+                closeModal();
+                load();
+            } else {
+                const msg = res ? await res.text() : 'Sem conexão com a API.';
+                formAlert.textContent   = msg || 'Erro ao salvar.';
+                formAlert.style.display = 'block';
+            }
+        });
+
+        async function excluir(id) {
+            if (!confirm('Deseja excluir esta conta?')) return;
+            const res = await Api.del(`/api/v1/contasbancarias/${id}`);
+            if (res) load();
+        }
+
+        loadSelects();
+        load();
+
+        // ── Quick Create ──────────────────────────────────
+        let _qcSelectId, _qcEndpoint, _qcBodyFn, _qcRefreshFn;
+
+        async function _reloadBancoSelect() {
+            const res = await Api.getPublic('/api/v1/bancos');
+            const bancos = res && res.ok ? await res.json() : [];
+            fillSelect('fidBanco', bancos, 'id', 'nome');
+        }
+
+        const QC_TYPES = {
+            banco: {
+                title: 'Novo Banco',
+                endpoint: '/api/v1/bancos',
+                selectId: 'fidBanco',
+                html: `
+                    <div class="form-group">
+                        <label>Nome</label>
+                        <input type="text" id="qc-f1" placeholder="Ex: Itaú" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Código <small style="color:var(--text-muted)">(opcional)</small></label>
+                        <input type="text" id="qc-f2" placeholder="Ex: 341">
+                    </div>`,
+                body() {
+                    const nome = document.getElementById('qc-f1').value.trim();
+                    if (!nome) return null;
+                    const obj = { nome };
+                    const cod = document.getElementById('qc-f2').value.trim();
+                    if (cod) obj.codigo = cod;
+                    return obj;
+                },
+                refresh: _reloadBancoSelect,
+            },
+        };
+
+        function openQC(type) {
+            const cfg = QC_TYPES[type];
+            _qcSelectId  = cfg.selectId;
+            _qcEndpoint  = cfg.endpoint;
+            _qcBodyFn    = cfg.body.bind(cfg);
+            _qcRefreshFn = cfg.refresh;
+            document.getElementById('qc-title').textContent = cfg.title;
+            document.getElementById('qc-fields').innerHTML  = cfg.html;
+            document.getElementById('qc-alert').style.display = 'none';
+            document.getElementById('qc-overlay').classList.add('open');
+            setTimeout(() => document.querySelector('#qc-fields input')?.focus(), 50);
+        }
+
+        function closeQC() {
+            document.getElementById('qc-overlay').classList.remove('open');
+        }
+
+        async function submitQC() {
+            const alertEl = document.getElementById('qc-alert');
+            alertEl.style.display = 'none';
+            const body = _qcBodyFn();
+            if (!body) {
+                alertEl.textContent = 'Preencha os campos obrigatórios.';
+                alertEl.style.display = 'block';
+                return;
+            }
+            const res = await Api.postPublic(_qcEndpoint, body);
+            if (res && (res.ok || res.status === 201)) {
+                const created = await res.json();
+                await _qcRefreshFn();
+                if (created.id) document.getElementById(_qcSelectId).value = created.id;
+                closeQC();
+            } else {
+                const msg = res ? await res.text() : 'Sem conexão com a API.';
+                alertEl.textContent = msg || 'Erro ao salvar.';
+                alertEl.style.display = 'block';
+            }
+        }
+    </script>
+</body>
+</html>

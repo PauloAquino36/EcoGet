@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EcoGet – Transações</title>
+    <link rel="stylesheet" href="../css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="sidebar-logo"><i class="fa-solid fa-leaf"></i> <span>Eco</span>Get</div>
+        <nav>
+            <a href="dashboard.html"><i class="fa-solid fa-gauge-high fa-fw"></i> Dashboard</a>
+            <a href="transacoes.html" class="active"><i class="fa-solid fa-receipt fa-fw"></i> Transações</a>
+            <a href="contas.html"><i class="fa-solid fa-building-columns fa-fw"></i> Contas Bancárias</a>
+            <a href="metas.html"><i class="fa-solid fa-bullseye fa-fw"></i> Metas</a>
+            <a href="orcamentos.html"><i class="fa-solid fa-clipboard-list fa-fw"></i> Orçamentos</a>
+        </nav>
+        <div class="sidebar-footer">
+            <div id="user-email"></div>
+            <a onclick="Api.logout()">Sair</a>
+        </div>
+    </aside>
+
+    <div class="main">
+        <div class="topbar"><h1>Transações</h1></div>
+        <div class="content">
+            <div id="page-alert" class="alert alert-danger" style="display:none;"></div>
+            <div class="table-card">
+                <div class="table-header">
+                    <h2>Lista de Transações</h2>
+                    <button class="btn btn-primary" onclick="openModal()">+ Nova Transação</button>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Descrição</th>
+                            <th>Valor</th>
+                            <th>Tipo</th>
+                            <th>Categoria</th>
+                            <th>Data</th>
+                            <th>Banco</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal -->
+    <div class="modal-overlay" id="modal">
+        <div class="modal">
+            <h3 id="modal-title">Nova Transação</h3>
+            <form id="form" autocomplete="off">
+                <input type="hidden" id="fid">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Valor (R$)</label>
+                        <input type="number" step="0.01" min="0" id="fvalor" placeholder="0,00" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Data</label>
+                        <input type="date" id="fdata" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Descrição</label>
+                    <input type="text" id="fdescricao" placeholder="Ex: Compra supermercado">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Tipo de Transação</label>
+                        <div class="select-with-add">
+                            <select id="fidTipoTransacao" required></select>
+                            <button type="button" class="btn-add-inline" id="btn-add-tipo" onclick="openQC('tipo')" title="Novo tipo" style="display:none">+</button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Conta Bancária <span style="color:var(--danger)">*</span></label>
+                        <select id="fidContaBancaria" required></select>
+                    </div>
+                </div>
+                <div class="form-row" id="row-categoria">
+                    <div class="form-group">
+                        <label>Categoria <small style="color:var(--text-muted)">(opcional)</small></label>
+                        <div class="select-with-add">
+                            <select id="fidCategoria"></select>
+                            <button type="button" class="btn-add-inline" id="btn-add-categoria" onclick="openQC('categoria')" title="Nova categoria" style="display:none">+</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-check">
+                        <input type="checkbox" id="frecorrente"> Transação recorrente
+                    </label>
+                </div>
+                <div id="form-alert" class="alert alert-danger" style="display:none;"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-neutral" onclick="closeModal()">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Quick Create -->
+    <div class="qc-overlay" id="qc-overlay">
+        <div class="qc-modal">
+            <h4 id="qc-title"></h4>
+            <div id="qc-fields"></div>
+            <div id="qc-alert" class="alert alert-danger" style="display:none;"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-neutral" onclick="closeQC()">Cancelar</button>
+                <button type="button" class="btn btn-primary" onclick="submitQC()">Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="../script/api.js"></script>
+    <script>
+        Api.requireAuth();
+        let editingId = null;
+
+        // Show quick-create buttons only for admins
+        if (Api.isAdmin()) {
+            document.getElementById('btn-add-tipo').style.display = '';
+            document.getElementById('btn-add-categoria').style.display = '';
+        }
+
+        document.getElementById('fidTipoTransacao').addEventListener('change', _toggleCategoria);
+
+        // Carrega os selects da API cada vez que o modal abre
+        async function loadSelects() {
+            const ids = ['fidTipoTransacao', 'fidCategoria', 'fidContaBancaria'];
+            ids.forEach(id => {
+                document.getElementById(id).innerHTML = '<option value="" disabled>Carregando...</option>';
+            });
+
+            const [resT, resC, resCC] = await Promise.all([
+                Api.get('/api/v1/tipostransacao'),
+                Api.get('/api/v1/categorias'),
+                Api.get('/api/v1/contasbancarias'),
+            ]);
+            const tipos      = resT  && resT.ok  ? await resT.json()  : [];
+            const categorias = resC  && resC.ok  ? await resC.json()  : [];
+            const contas     = resCC && resCC.ok ? await resCC.json() : [];
+
+            const tipoSel = document.getElementById('fidTipoTransacao');
+            tipoSel.innerHTML = tipos.length
+                ? tipos.map(i => `<option value="${i.id}" data-credito="${i.credito}">${i.nome}</option>`).join('')
+                : '<option value="" disabled>Nenhum dado disponível</option>';
+            _toggleCategoria();
+
+            const catSel = document.getElementById('fidCategoria');
+            catSel.innerHTML = '<option value="">— Nenhuma —</option>' +
+                categorias.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
+
+            document.getElementById('fidContaBancaria').innerHTML =
+                contas.length
+                    ? contas.map(c => `<option value="${c.id}">${c.conta}${c.nomeBanco ? ' · ' + c.nomeBanco : ''}</option>`).join('')
+                    : '<option value="" disabled>Nenhuma conta cadastrada</option>';
+        }
+
+        function fillSelect(id, items, val, label) {
+            document.getElementById(id).innerHTML = items.length
+                ? items.map(i => `<option value="${i[val]}">${i[label]}</option>`).join('')
+                : '<option value="" disabled>Nenhum dado disponível</option>';
+        }
+
+        async function load() {
+            const res = await Api.get('/api/v1/transacoes');
+            if (!res) return;
+            const data = await res.json();
+            const tbody = document.getElementById('tbody');
+            if (!data.length) {
+                tbody.innerHTML = `<tr><td colspan="8" class="empty-state">Nenhuma transação cadastrada.</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = data.map(t => `
+                <tr>
+                    <td>${t.id}</td>
+                    <td>${t.descricao || '—'}</td>
+                    <td><strong>R$ ${(t.valor || 0).toFixed(2)}</strong></td>
+                    <td>${t.nomeTipoTransacao || '—'}</td>
+                    <td>${t.nomeCategoria || '—'}</td>
+                    <td>${t.data || '—'}</td>
+                    <td>${t.nomeContaBancaria || '—'}</td>
+                    <td><div class="actions">
+                        <button class="btn btn-warning btn-sm" onclick='openModal(${JSON.stringify(t)})'>Editar</button>
+                        <button class="btn btn-danger btn-sm"  onclick="excluir(${t.id})">Excluir</button>
+                    </div></td>
+                </tr>
+            `).join('');
+        }
+
+        async function openModal(t = null) {
+            editingId = t ? t.id : null;
+            document.getElementById('modal-title').textContent = t ? 'Editar Transação' : 'Nova Transação';
+            document.getElementById('fvalor').value     = t ? t.valor     : '';
+            document.getElementById('fdata').value      = t ? t.data      : '';
+            document.getElementById('fdescricao').value = t ? t.descricao : '';
+            document.getElementById('frecorrente').checked = t ? t.recorrente : false;
+            document.getElementById('form-alert').style.display = 'none';
+            document.getElementById('modal').classList.add('open');
+
+            // Busca opções da API e aguarda antes de definir os valores selecionados
+            await loadSelects();
+
+            if (t) {
+                document.getElementById('fidTipoTransacao').value = t.idTipoTransacao || '';
+                document.getElementById('fidCategoria').value     = t.idCategoria     || '';
+                document.getElementById('fidContaBancaria').value = t.idContaBancaria || '';
+            }
+            _toggleCategoria();
+        }
+
+        function closeModal() {
+            document.getElementById('modal').classList.remove('open');
+            document.getElementById('form').reset();
+            editingId = null;
+        }
+
+        document.getElementById('form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formAlert = document.getElementById('form-alert');
+            const body = {
+                valor:           parseFloat(document.getElementById('fvalor').value),
+                data:            document.getElementById('fdata').value,
+                descricao:       document.getElementById('fdescricao').value,
+                recorrente:      document.getElementById('frecorrente').checked,
+                idTipoTransacao: parseInt(document.getElementById('fidTipoTransacao').value),
+                idCategoria:     document.getElementById('fidCategoria').value
+                                 ? parseInt(document.getElementById('fidCategoria').value) : null,
+                idContaBancaria: parseInt(document.getElementById('fidContaBancaria').value),
+            };
+            const res = editingId
+                ? await Api.put(`/api/v1/transacoes/${editingId}`, body)
+                : await Api.post('/api/v1/transacoes', body);
+
+            if (res && (res.ok || res.status === 201)) {
+                closeModal();
+                load();
+            } else {
+                const msg = res ? await res.text() : 'Sem conexão com a API.';
+                formAlert.textContent   = msg || 'Erro ao salvar.';
+                formAlert.style.display = 'block';
+            }
+        });
+
+        async function excluir(id) {
+            if (!confirm('Deseja excluir esta transação?')) return;
+            const res = await Api.del(`/api/v1/transacoes/${id}`);
+            if (res) load();
+        }
+
+        load();
+
+        // ── Quick Create ──────────────────────────────────
+        let _qcSelectId, _qcEndpoint, _qcBodyFn, _qcRefreshFn;
+
+        function _toggleCategoria() {
+            const sel = document.getElementById('fidTipoTransacao');
+            const opt = sel.options[sel.selectedIndex];
+            const isCredito = opt && opt.dataset.credito === 'true';
+            document.getElementById('row-categoria').style.display = isCredito ? 'none' : '';
+            if (isCredito) document.getElementById('fidCategoria').value = '';
+        }
+
+        async function _reloadTiposSelect() {
+            const res = await Api.get('/api/v1/tipostransacao');
+            const tipos = res && res.ok ? await res.json() : [];
+            const tipoSel = document.getElementById('fidTipoTransacao');
+            tipoSel.innerHTML = tipos.length
+                ? tipos.map(i => `<option value="${i.id}" data-credito="${i.credito}">${i.nome}</option>`).join('')
+                : '<option value="" disabled>Nenhum dado disponível</option>';
+            _toggleCategoria();
+        }
+
+        async function _reloadCategoriasSelect() {
+            const res = await Api.get('/api/v1/categorias');
+            const cats = res && res.ok ? await res.json() : [];
+            fillSelect('fidCategoria', cats, 'id', 'nome');
+        }
+
+        const _nomeHtml = (label, placeholder) => `
+            <div class="form-group">
+                <label>${label}</label>
+                <input type="text" id="qc-f1" placeholder="${placeholder}" required>
+            </div>`;
+
+        const QC_TYPES = {
+            tipo: {
+                title: 'Novo Tipo de Transação',
+                endpoint: '/api/v1/tipostransacao',
+                selectId: 'fidTipoTransacao',
+                html: `
+                    <div class="form-group">
+                        <label>Nome</label>
+                        <input type="text" id="qc-f1" placeholder="Ex: Despesa Fixa" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Tipo de movimentação</label>
+                        <select id="qc-f2" required>
+                            <option value="true">Crédito (aumenta o saldo)</option>
+                            <option value="false">Débito (diminui o saldo)</option>
+                        </select>
+                    </div>`,
+                body() {
+                    const nome = document.getElementById('qc-f1').value.trim();
+                    const credito = document.getElementById('qc-f2').value === 'true';
+                    return nome ? { nome, credito } : null;
+                },
+                refresh: _reloadTiposSelect,
+            },
+            categoria: {
+                title: 'Nova Categoria',
+                endpoint: '/api/v1/categorias',
+                selectId: 'fidCategoria',
+                html: _nomeHtml('Nome', 'Ex: Alimentação'),
+                body() {
+                    const nome = document.getElementById('qc-f1').value.trim();
+                    return nome ? { nome } : null;
+                },
+                refresh: _reloadCategoriasSelect,
+            },
+        };
+
+        function openQC(type) {
+            const cfg = QC_TYPES[type];
+            _qcSelectId  = cfg.selectId;
+            _qcEndpoint  = cfg.endpoint;
+            _qcBodyFn    = cfg.body.bind(cfg);
+            _qcRefreshFn = cfg.refresh;
+            document.getElementById('qc-title').textContent = cfg.title;
+            document.getElementById('qc-fields').innerHTML  = cfg.html;
+            document.getElementById('qc-alert').style.display = 'none';
+            document.getElementById('qc-overlay').classList.add('open');
+            setTimeout(() => document.querySelector('#qc-fields input')?.focus(), 50);
+        }
+
+        function closeQC() {
+            document.getElementById('qc-overlay').classList.remove('open');
+        }
+
+        async function submitQC() {
+            const alertEl = document.getElementById('qc-alert');
+            alertEl.style.display = 'none';
+            const body = _qcBodyFn();
+            if (!body) {
+                alertEl.textContent = 'Preencha os campos obrigatórios.';
+                alertEl.style.display = 'block';
+                return;
+            }
+            const res = await Api.post(_qcEndpoint, body);
+            if (res && (res.ok || res.status === 201)) {
+                const created = await res.json();
+                await _qcRefreshFn();
+                if (created.id) document.getElementById(_qcSelectId).value = created.id;
+                closeQC();
+            } else {
+                const msg = res ? await res.text() : 'Sem conexão com a API.';
+                alertEl.textContent = msg || 'Erro ao salvar.';
+                alertEl.style.display = 'block';
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EcoGet – Metas</title>
+    <link rel="stylesheet" href="../css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="sidebar-logo"><i class="fa-solid fa-leaf"></i> <span>Eco</span>Get</div>
+        <nav>
+            <a href="dashboard.html"><i class="fa-solid fa-gauge-high fa-fw"></i> Dashboard</a>
+            <a href="transacoes.html"><i class="fa-solid fa-receipt fa-fw"></i> Transações</a>
+            <a href="contas.html"><i class="fa-solid fa-building-columns fa-fw"></i> Contas Bancárias</a>
+            <a href="metas.html" class="active"><i class="fa-solid fa-bullseye fa-fw"></i> Metas</a>
+            <a href="orcamentos.html"><i class="fa-solid fa-clipboard-list fa-fw"></i> Orçamentos</a>
+        </nav>
+        <div class="sidebar-footer">
+            <div id="user-email"></div>
+            <a onclick="Api.logout()">Sair</a>
+        </div>
+    </aside>
+
+    <div class="main">
+        <div class="topbar"><h1>Metas</h1></div>
+        <div class="content">
+            <div class="table-card">
+                <div class="table-header">
+                    <h2>Lista de Metas</h2>
+                    <button class="btn btn-primary" onclick="openModal()">+ Nova Meta</button>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Nome</th>
+                            <th>Valor Alvo</th>
+                            <th>Progresso</th>
+                            <th>Início</th>
+                            <th>Fim</th>
+                            <th>Conta</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal -->
+    <div class="modal-overlay" id="modal">
+        <div class="modal">
+            <h3 id="modal-title">Nova Meta</h3>
+            <form id="form" autocomplete="off">
+                <input type="hidden" id="fid">
+                <div class="form-group">
+                    <label>Nome da meta</label>
+                    <input type="text" id="fnome" placeholder="Ex: Viagem para Europa" required>
+                </div>
+                <div class="form-group">
+                    <label>Descrição</label>
+                    <input type="text" id="fdescricao" placeholder="Detalhes da meta (opcional)">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Valor Alvo (R$)</label>
+                        <input type="number" step="0.01" min="0" id="fvalor" placeholder="0,00" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Data de Início</label>
+                        <input type="date" id="finicio" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Data de Fim</label>
+                        <input type="date" id="ffim" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Conta Bancária <span style="color:var(--danger)">*</span></label>
+                    <select id="fidContaBancaria" required></select>
+                </div>
+                <div id="form-alert" class="alert alert-danger" style="display:none;"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-neutral" onclick="closeModal()">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal Operação (Depositar / Sacar) -->
+    <div class="modal-overlay" id="modal-op">
+        <div class="modal" style="max-width:360px">
+            <h3 id="op-title">Depositar</h3>
+            <div class="form-group">
+                <label>Valor (R$)</label>
+                <input type="number" step="0.01" min="0.01" id="fop-valor" placeholder="0,00">
+            </div>
+            <div id="op-alert" class="alert alert-danger" style="display:none;"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-neutral" onclick="closeOp()">Cancelar</button>
+                <button type="button" class="btn btn-primary" onclick="submitOp()">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="../script/api.js"></script>
+    <script>
+        Api.requireAuth();
+        let editingId = null;
+
+        async function loadSelects() {
+            const res = await Api.get('/api/v1/contasbancarias');
+            const contas = res && res.ok ? await res.json() : [];
+            const sel = document.getElementById('fidContaBancaria');
+            sel.innerHTML = contas.length
+                ? contas.map(c => `<option value="${c.id}">${c.conta}${c.nomeBanco ? ' · ' + c.nomeBanco : ''}</option>`).join('')
+                : '<option value="" disabled>Nenhuma conta cadastrada</option>';
+        }
+
+        async function load() {
+            const res = await Api.get('/api/v1/metas');
+            if (!res) return;
+            const data = await res.json();
+            const tbody = document.getElementById('tbody');
+            if (!data.length) {
+                tbody.innerHTML = `<tr><td colspan="8" class="empty-state">Nenhuma meta cadastrada.</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = data.map(m => {
+                const pct = m.valor ? Math.min(100, ((m.progresso || 0) / m.valor * 100)).toFixed(0) : 0;
+                const temConta = !!m.idContaBancaria;
+                return `<tr>
+                    <td>${m.id}</td>
+                    <td><strong>${m.nome}</strong>${m.descricao ? `<br><small style="color:var(--text-muted)">${m.descricao}</small>` : ''}</td>
+                    <td>R$ ${(m.valor || 0).toFixed(2)}</td>
+                    <td>
+                        <div class="progress-wrap">
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width:${pct}%"></div>
+                            </div>
+                            <small>${pct}%</small>
+                        </div>
+                        <small>R$ ${(m.progresso || 0).toFixed(2)}</small>
+                    </td>
+                    <td>${m.inicio || '—'}</td>
+                    <td>${m.fim || '—'}</td>
+                    <td>${m.nomeContaBancaria || '—'}</td>
+                    <td><div class="actions">
+                        <button class="btn btn-warning btn-sm" onclick='openModal(${JSON.stringify(m)})'>Editar</button>
+                        <button class="btn btn-danger btn-sm"  onclick="excluir(${m.id})">Excluir</button>
+                    </div></td>
+                </tr>`;
+            }).join('');
+        }
+
+        function openModal(m = null) {
+            editingId = m ? m.id : null;
+            document.getElementById('modal-title').textContent = m ? 'Editar Meta' : 'Nova Meta';
+            document.getElementById('fnome').value      = m ? m.nome      : '';
+            document.getElementById('fdescricao').value = m ? m.descricao : '';
+            document.getElementById('fvalor').value     = m ? m.valor     : '';
+            document.getElementById('finicio').value    = m ? m.inicio    : '';
+            document.getElementById('ffim').value       = m ? m.fim       : '';
+            document.getElementById('form-alert').style.display = 'none';
+            loadSelects().then(() => {
+                if (m && m.idContaBancaria)
+                    document.getElementById('fidContaBancaria').value = m.idContaBancaria;
+            });
+            document.getElementById('modal').classList.add('open');
+        }
+
+        function closeModal() {
+            document.getElementById('modal').classList.remove('open');
+            document.getElementById('form').reset();
+            editingId = null;
+        }
+
+        document.getElementById('form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formAlert = document.getElementById('form-alert');
+            const body = {
+                nome:            document.getElementById('fnome').value,
+                descricao:       document.getElementById('fdescricao').value,
+                valor:           parseFloat(document.getElementById('fvalor').value),
+                inicio:          document.getElementById('finicio').value,
+                fim:             document.getElementById('ffim').value,
+                idContaBancaria: document.getElementById('fidContaBancaria').value
+                                 ? parseInt(document.getElementById('fidContaBancaria').value) : null,
+            };
+            const res = editingId
+                ? await Api.put(`/api/v1/metas/${editingId}`, body)
+                : await Api.post('/api/v1/metas', body);
+
+            if (res && (res.ok || res.status === 201)) {
+                closeModal();
+                load();
+            } else {
+                const msg = res ? await res.text() : 'Sem conexão com a API.';
+                formAlert.textContent   = msg || 'Erro ao salvar.';
+                formAlert.style.display = 'block';
+            }
+        });
+
+        async function excluir(id) {
+            if (!confirm('Deseja excluir esta meta?')) return;
+            const res = await Api.del(`/api/v1/metas/${id}`);
+            if (res) load();
+        }
+
+        // ── Depositar / Sacar ─────────────────────────────
+        let _opMetaId, _opEndpoint;
+
+        function openOp(metaId, tipo) {
+            _opMetaId   = metaId;
+            _opEndpoint = `/api/v1/metas/${metaId}/${tipo}`;
+            document.getElementById('op-title').textContent = tipo === 'depositar' ? 'Depositar na Meta' : 'Sacar da Meta';
+            document.getElementById('fop-valor').value = '';
+            document.getElementById('op-alert').style.display = 'none';
+            document.getElementById('modal-op').classList.add('open');
+            setTimeout(() => document.getElementById('fop-valor').focus(), 50);
+        }
+
+        function closeOp() {
+            document.getElementById('modal-op').classList.remove('open');
+        }
+
+        async function submitOp() {
+            const alertEl = document.getElementById('op-alert');
+            alertEl.style.display = 'none';
+            const valor = parseFloat(document.getElementById('fop-valor').value);
+            if (!valor || valor <= 0) {
+                alertEl.textContent = 'Informe um valor válido.';
+                alertEl.style.display = 'block';
+                return;
+            }
+            const res = await Api.post(_opEndpoint, { valor });
+            if (res && res.ok) {
+                closeOp();
+                load();
+            } else {
+                const msg = res ? await res.text() : 'Sem conexão com a API.';
+                alertEl.textContent = msg || 'Erro ao realizar operação.';
+                alertEl.style.display = 'block';
+            }
+        }
+
+        loadSelects();
+        load();
+    </script>
+</body>
+</html>

@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EcoGet – Dashboard</title>
+    <link rel="stylesheet" href="../css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="sidebar-logo"><i class="fa-solid fa-leaf"></i> <span>Eco</span>Get</div>
+        <nav>
+            <a href="dashboard.html" class="active"><i class="fa-solid fa-gauge-high fa-fw"></i> Dashboard</a>
+            <a href="transacoes.html"><i class="fa-solid fa-receipt fa-fw"></i> Transações</a>
+            <a href="contas.html"><i class="fa-solid fa-building-columns fa-fw"></i> Contas Bancárias</a>
+            <a href="metas.html"><i class="fa-solid fa-bullseye fa-fw"></i> Metas</a>
+            <a href="orcamentos.html"><i class="fa-solid fa-clipboard-list fa-fw"></i> Orçamentos</a>
+        </nav>
+        <div class="sidebar-footer">
+            <div id="user-email"></div>
+            <a onclick="Api.logout()">Sair</a>
+        </div>
+    </aside>
+
+    <div class="main">
+        <div class="topbar">
+            <h1>Dashboard</h1>
+        </div>
+        <div class="content">
+            <div class="cards-grid" id="cards-grid">
+                <div class="card"><div class="card-icon"><i class="fa-solid fa-spinner fa-spin"></i></div><div class="card-title">Carregando</div><div class="card-value">…</div></div>
+            </div>
+
+            <div class="table-card">
+                <div class="table-header">
+                    <h2>Transações Recentes</h2>
+                    <a href="transacoes.html" class="btn btn-primary">Ver todas</a>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Descrição</th>
+                            <th>Valor</th>
+                            <th>Tipo</th>
+                            <th>Categoria</th>
+                            <th>Data</th>
+                            <th>Recorrente</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbody-transacoes"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script src="../script/api.js"></script>
+    <script>
+        Api.requireAuth();
+
+        async function load() {
+            const [resT, resC, resM, resO] = await Promise.all([
+                Api.get('/api/v1/transacoes'),
+                Api.get('/api/v1/contasbancarias'),
+                Api.get('/api/v1/metas'),
+                Api.get('/api/v1/orcamentos'),
+            ]);
+
+            const transacoes = resT && resT.ok ? await resT.json() : [];
+            const contas     = resC && resC.ok ? await resC.json() : [];
+            const metas      = resM && resM.ok ? await resM.json() : [];
+            const orcamentos = resO && resO.ok ? await resO.json() : [];
+
+            const totalSaldo = contas.reduce((s, c) => s + (c.saldo || 0), 0);
+
+            document.getElementById('cards-grid').innerHTML = `
+                <div class="card">
+                    <div class="card-icon"><i class="fa-solid fa-receipt"></i></div>
+                    <div class="card-title">Transações</div>
+                    <div class="card-value">${transacoes.length}</div>
+                </div>
+                <div class="card">
+                    <div class="card-icon"><i class="fa-solid fa-building-columns"></i></div>
+                    <div class="card-title">Contas Bancárias</div>
+                    <div class="card-value">${contas.length}</div>
+                </div>
+                <div class="card">
+                    <div class="card-icon"><i class="fa-solid fa-wallet"></i></div>
+                    <div class="card-title">Saldo Total</div>
+                    <div class="card-value">R$ ${totalSaldo.toFixed(2)}</div>
+                </div>
+                <div class="card">
+                    <div class="card-icon"><i class="fa-solid fa-bullseye"></i></div>
+                    <div class="card-title">Metas</div>
+                    <div class="card-value">${metas.length}</div>
+                </div>
+                <div class="card">
+                    <div class="card-icon"><i class="fa-solid fa-clipboard-list"></i></div>
+                    <div class="card-title">Orçamentos</div>
+                    <div class="card-value">${orcamentos.length}</div>
+                </div>
+            `;
+
+            const tbody  = document.getElementById('tbody-transacoes');
+            const recent = [...transacoes].reverse().slice(0, 8);
+
+            if (recent.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="empty-state">Nenhuma transação cadastrada ainda.</td></tr>`;
+            } else {
+                tbody.innerHTML = recent.map(t => `
+                    <tr>
+                        <td>${t.descricao || '—'}</td>
+                        <td>R$ ${(t.valor || 0).toFixed(2)}</td>
+                        <td>${t.nomeTipoTransacao || '—'}</td>
+                        <td>${t.nomeCategoria || '—'}</td>
+                        <td>${t.data || '—'}</td>
+                        <td>${t.recorrente
+                            ? '<span class="badge badge-green">Sim</span>'
+                            : '<span class="badge badge-orange">Não</span>'}</td>
+                    </tr>
+                `).join('');
+            }
+        }
+
+        load();
+    </script>
+</body>
+</html>
