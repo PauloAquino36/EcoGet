@@ -16,6 +16,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -66,19 +67,21 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 // Swagger / OpenAPI
                 .requestMatchers(
-                    "/v3/api-docs/**",
-                    "/v2/api-docs/**",
-                    "/swagger-ui/**",
-                    "/swagger-ui.html",
-                    "/swagger-resources/**",
-                    "/webjars/**",
-                    "/configuration/**"
+                    new AntPathRequestMatcher("/v3/api-docs/**"),
+                    new AntPathRequestMatcher("/v2/api-docs/**"),
+                    new AntPathRequestMatcher("/swagger-ui/**"),
+                    new AntPathRequestMatcher("/swagger-ui.html"),
+                    new AntPathRequestMatcher("/swagger-resources/**"),
+                    new AntPathRequestMatcher("/webjars/**"),
+                    new AntPathRequestMatcher("/configuration/**")
                 ).permitAll()
                 // Endpoint de erros do Spring
-                .requestMatchers("/error").permitAll()
+                .requestMatchers(new AntPathRequestMatcher("/error")).permitAll()
                 // Endpoints de autenticação (registro e login)
                 .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/v1/usuarios").permitAll()
                 .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/v1/usuarios/auth").permitAll()
+                // Listar todos os usuários: apenas ADMIN
+                .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/usuarios").hasRole("ADMIN")
                 // Todos os demais endpoints exigem autenticação
                 .anyRequest().authenticated()
             )

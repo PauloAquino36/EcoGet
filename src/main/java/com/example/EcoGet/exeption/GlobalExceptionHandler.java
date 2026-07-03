@@ -15,7 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-@RestControllerAdvice
+@RestControllerAdvice(basePackages = "com.example.EcoGet")
 public class GlobalExceptionHandler {
 
     // 400 – Regra de negócio violada
